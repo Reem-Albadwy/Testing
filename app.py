@@ -1,3 +1,4 @@
+# ✅ مكتبة واجهة التطبيق
 import streamlit as st
 import numpy as np
 import tensorflow as tf
@@ -6,11 +7,12 @@ from PIL import Image
 import os, io, base64
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
-# ---------- خلفية مخصصة ----------
+# ✅ إعداد الخلفية المخصصة
 def set_background(image_path):
     with open(image_path, "rb") as file:
         encoded = base64.b64encode(file.read()).decode()
@@ -26,9 +28,9 @@ def set_background(image_path):
     """
     st.markdown(css, unsafe_allow_html=True)
 
-set_background("background.png")  # اسم الصورة اللي انتِ رفعاها
+set_background("background.png")  # الصورة المرفوعة مع الريبو
 
-# ---------- تحميل الموديل ----------
+# ✅ تحميل الموديل
 @st.cache_resource
 def load_model():
     model_path = "SavedModel_format"
@@ -37,32 +39,34 @@ def load_model():
 model = load_model()
 infer = model.signatures["serving_default"]
 
+# ✅ أسماء الكلاسات والوصف
 class_names = ['CaS', 'CoS', 'Gum', 'MC', 'OC', 'OLP', 'OT']
 disease_info = {
-    "OLP": "Oral Lichen Planus is a chronic condition that affects the inside of the mouth.",
+    "OLP": "Oral Lichen Planus is a chronic condition affecting the mouth.",
     "MC": "Mucosal condition often related to irritation or trauma.",
-    "Gum": "Gum disease is an inflammation of the gums that can affect the bone.",
-    "CoS": "Condition of soft tissues, sometimes due to bacteria.",
-    "OT": "Other types of minor oral tissue diseases.",
-    "CaS": "Caries-associated symptoms due to decay or infection.",
-    "OC": "Oral cancer — a serious condition needing professional follow-up."
+    "Gum": "Gum disease involves inflammation that affects the tissues around teeth.",
+    "CoS": "Condition of soft tissues, sometimes caused by infection.",
+    "OT": "Other minor oral tissue issues.",
+    "CaS": "Caries symptoms are related to tooth decay and infection.",
+    "OC": "Oral cancer may develop in any part of the mouth."
 }
 
-# ---------- واجهة ----------
-st.set_page_config(page_title="Teeth Disease Classifier", page_icon="🦷")
-st.markdown("<h1 style='text-align:center; color:#0066cc;'>🦷 AI Teeth Disease Classifier</h1>", unsafe_allow_html=True)
-st.markdown("Upload a teeth image to get diagnosis & download a report.", unsafe_allow_html=True)
+# ✅ إعداد واجهة Streamlit
+st.set_page_config(page_title="Teeth Classifier", page_icon="🦷")
+st.markdown("""
+<h1 style='text-align:center; color:#004080; font-family:sans-serif;'>🦷 Smart Teeth Disease Classifier</h1>
+<p style='text-align:center; color:#333;'>Upload a teeth image below to predict the disease and download a detailed PDF report.</p>
+""", unsafe_allow_html=True)
 
-# ---------- اسم المريض ----------
+# ✅ إدخال اسم المريض
 patient_name = st.text_input("👤 Enter patient name:")
 
-# ---------- رفع الصورة ----------
-uploaded_file = st.file_uploader("📸 Upload a teeth image", type=["jpg", "jpeg", "png"])
+# ✅ رفع الصورة
+uploaded_file = st.file_uploader("📸 Upload Image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None and patient_name:
+if uploaded_file and patient_name:
     img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Uploaded Image", use_column_width=True)
-
     img_resized = img.resize((224, 224))
     img_array = image.img_to_array(img_resized) / 255.0
     img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
@@ -72,53 +76,42 @@ if uploaded_file is not None and patient_name:
 
     pred_class = class_names[np.argmax(probs)]
     confidence = float(np.max(probs)) * 100
-    st.success(f"🩺 Predicted Disease: **{pred_class}**")
-    st.info(f"📊 Confidence: **{confidence:.2f}%**")
 
-    # 🔗 روابط للمعلومات
-    with st.expander("🌐 Learn more about this disease"):
-        st.markdown(f"**🧾 Description:** {disease_info.get(pred_class, 'No info available')}")
+    st.success(f"🩺 Prediction: {pred_class}")
+    st.info(f"Confidence: {confidence:.2f}%")
+
+    with st.expander("🧾 Learn more"):
+        st.write(f"**{pred_class}**: {disease_info.get(pred_class)}")
         search_url = f"https://www.google.com/search?q=oral+disease+{pred_class}"
-        st.markdown(f"[🔍 Read more on Google]({search_url})")
+        st.markdown(f"[🔍 Search about this condition]({search_url})")
 
-    # ---------- توليد PDF ----------
+    # ✅ توليد تقرير PDF بتنسيق جميل
     def create_report(name, pred, conf, desc):
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         styles = getSampleStyleSheet()
-        elements = []
+        custom_title = ParagraphStyle(name='CenterTitle', fontSize=20, textColor=colors.HexColor('#004080'), alignment=TA_CENTER)
+        normal = styles['Normal']
+        normal.fontName = 'Helvetica'
+        normal.fontSize = 12
 
-        title_style = styles['Title']
-        title_style.textColor = colors.HexColor("#0066cc")
-        elements.append(Paragraph("🦷 Teeth Disease Classification Report", title_style))
-        elements.append(Spacer(1, 20))
-
-        patient_info = f"<b>👤 Patient Name:</b> {name}<br/><b>📅 Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        elements.append(Paragraph(patient_info, styles['Normal']))
-        elements.append(Spacer(1, 15))
-
-        result = f"<b>🩺 Prediction:</b> <font color='red'>{pred}</font><br/><b>📊 Confidence:</b> {conf:.2f}%"
-        elements.append(Paragraph(result, styles['Normal']))
-        elements.append(Spacer(1, 15))
-
-        if desc:
-            elements.append(Paragraph("<b>🧾 Disease Details:</b>", styles['Heading3']))
-            elements.append(Spacer(1, 5))
-            elements.append(Paragraph(desc, styles['BodyText']))
-            elements.append(Spacer(1, 10))
-
-        footer = "<font size=9 color=grey>This report was generated by an AI-powered diagnostic tool.</font>"
-        elements.append(Paragraph(footer, styles['Normal']))
-
+        elements = [
+            Paragraph("Teeth Disease Diagnostic Report", custom_title),
+            Spacer(1, 20),
+            Paragraph(f"👤 <b>Patient Name:</b> {name}", normal),
+            Paragraph(f"📅 <b>Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal),
+            Spacer(1, 12),
+            Paragraph(f"🩺 <b>Prediction:</b> <font color='red'>{pred}</font>", normal),
+            Paragraph(f"📊 <b>Confidence:</b> {conf:.2f}%", normal),
+            Spacer(1, 12),
+            Paragraph(f"🧾 <b>Description:</b> {desc}", normal),
+            Spacer(1, 20),
+            Paragraph("<font size=9 color=gray>This report was auto-generated by an AI-powered diagnosis tool.</font>", normal)
+        ]
         doc.build(elements)
         buffer.seek(0)
         return buffer
 
-    report_buffer = create_report(patient_name, pred_class, confidence, disease_info.get(pred_class))
+    pdf_buffer = create_report(patient_name, pred_class, confidence, disease_info[pred_class])
 
-    st.download_button(
-        label="⬇️ Download PDF Report",
-        data=report_buffer,
-        file_name=f"{patient_name}_teeth_report.pdf",
-        mime="application/pdf"
-    )
+    st.download_button("⬇️ Download PDF Report", data=pdf_buffer, file_name="teeth_report.pdf", mime="application/pdf")
