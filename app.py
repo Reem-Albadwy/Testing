@@ -3,129 +3,122 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 from PIL import Image
-import os
-from io import BytesIO
+import os, io, base64
+from datetime import datetime
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
-# ===== Page Config =====
-st.set_page_config(
-    page_title="🦷 AI Teeth Diagnosis",
-    page_icon="🦷",
-    layout="centered"
-)
-
-# ===== Background Image CSS =====
-st.markdown("""
+# ---------- خلفية مخصصة ----------
+def set_background(image_path):
+    with open(image_path, "rb") as file:
+        encoded = base64.b64encode(file.read()).decode()
+    css = f"""
     <style>
-        body {
-            background-image: url('https://images.unsplash.com/photo-1588776814546-ec7d2b3896f7?auto=format&fit=crop&w=1350&q=80');
-            background-size: cover;
-            background-attachment: fixed;
-            background-repeat: no-repeat;
-            background-position: center;
-        }
-        .main, .block-container {
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 2px 2px 20px rgba(0,0,0,0.1);
-        }
+    .stApp {{
+        background-image: url("data:image/png;base64,{encoded}");
+        background-size: cover;
+        background-attachment: fixed;
+        background-position: center;
+    }}
     </style>
-""", unsafe_allow_html=True)
+    """
+    st.markdown(css, unsafe_allow_html=True)
 
-# ===== Class Names and Links =====
-disease_links = {
-    'CaS': "https://www.webmd.com/oral-health/guide/canker-sores",
-    'CoS': "https://www.webmd.com/oral-health/what-is-cold-sore",
-    'Gum': "https://www.webmd.com/oral-health/guide/gum-disease",
-    'MC': "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7151223/",
-    'OC': "https://www.webmd.com/oral-health/guide/oral-thrush",
-    'OLP': "https://www.mayoclinic.org/diseases-conditions/oral-lichen-planus",
-    'OT': "https://www.cdc.gov/cancer/oral/basic_info/index.htm"
-}
-class_names = list(disease_links.keys())
+set_background("background.png")  # اسم الصورة اللي انتِ رفعاها
 
-# ===== Title =====
-st.markdown('<h1 style="text-align:center; color:#003366;">🦷 AI Teeth Disease Diagnosis</h1>', unsafe_allow_html=True)
-st.write("Upload your teeth image to receive a quick AI-powered diagnosis.")
-
-# ===== Patient Name =====
-patient_name = st.text_input("👤 Patient Name:")
-if patient_name:
-    st.success(f"👋 Welcome, {patient_name}!")
-
-# ===== Load Model =====
+# ---------- تحميل الموديل ----------
 @st.cache_resource
 def load_model():
     model_path = "SavedModel_format"
-    if not os.path.exists(model_path):
-        return None
     return tf.saved_model.load(model_path)
 
 model = load_model()
+infer = model.signatures["serving_default"]
 
-# ===== Generate PDF Report =====
-def generate_pdf(name, disease, confidence):
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(100, 760, "🦷 AI Teeth Diagnosis Report")
-    c.setFont("Helvetica", 12)
-    c.drawString(100, 720, f"Patient Name: {name}")
-    c.drawString(100, 700, f"Predicted Disease: {disease}")
-    c.drawString(100, 680, f"Confidence: {confidence:.2f}%")
-    c.drawString(100, 640, f"More Info: {disease_links.get(disease, 'N/A')}")
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
+class_names = ['CaS', 'CoS', 'Gum', 'MC', 'OC', 'OLP', 'OT']
+disease_info = {
+    "OLP": "Oral Lichen Planus is a chronic condition that affects the inside of the mouth.",
+    "MC": "Mucosal condition often related to irritation or trauma.",
+    "Gum": "Gum disease is an inflammation of the gums that can affect the bone.",
+    "CoS": "Condition of soft tissues, sometimes due to bacteria.",
+    "OT": "Other types of minor oral tissue diseases.",
+    "CaS": "Caries-associated symptoms due to decay or infection.",
+    "OC": "Oral cancer — a serious condition needing professional follow-up."
+}
 
-# ===== Upload Image =====
-uploaded_file = st.file_uploader("📤 Upload a teeth image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+# ---------- واجهة ----------
+st.set_page_config(page_title="Teeth Disease Classifier", page_icon="🦷")
+st.markdown("<h1 style='text-align:center; color:#0066cc;'>🦷 AI Teeth Disease Classifier</h1>", unsafe_allow_html=True)
+st.markdown("Upload a teeth image to get diagnosis & download a report.", unsafe_allow_html=True)
+
+# ---------- اسم المريض ----------
+patient_name = st.text_input("👤 Enter patient name:")
+
+# ---------- رفع الصورة ----------
+uploaded_file = st.file_uploader("📸 Upload a teeth image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None and patient_name:
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="🖼 Uploaded Image", use_column_width=True)
+    st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    img = img.resize((224, 224))
-    img_array = image.img_to_array(img) / 255.0
+    img_resized = img.resize((224, 224))
+    img_array = image.img_to_array(img_resized) / 255.0
     img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
 
-    if model is None:
-        st.error("❌ Model not loaded!")
-    else:
-        infer = model.signatures["serving_default"]
-        input_tensor = tf.convert_to_tensor(img_array)
-        predictions = infer(input_tensor)
-        key = list(predictions.keys())[0]
-        preds = predictions[key].numpy()[0]
+    predictions = infer(tf.convert_to_tensor(img_array))
+    probs = list(predictions.values())[0].numpy()[0]
 
-        pred_index = int(np.argmax(preds))
-        pred_class = class_names[pred_index]
-        confidence = float(np.max(preds)) * 100
+    pred_class = class_names[np.argmax(probs)]
+    confidence = float(np.max(probs)) * 100
+    st.success(f"🩺 Predicted Disease: **{pred_class}**")
+    st.info(f"📊 Confidence: **{confidence:.2f}%**")
 
-        st.markdown(f"### ✅ Prediction for {patient_name}: **{pred_class}**")
-        st.markdown(f"**📊 Confidence:** {confidence:.2f}%")
+    # 🔗 روابط للمعلومات
+    with st.expander("🌐 Learn more about this disease"):
+        st.markdown(f"**🧾 Description:** {disease_info.get(pred_class, 'No info available')}")
+        search_url = f"https://www.google.com/search?q=oral+disease+{pred_class}"
+        st.markdown(f"[🔍 Read more on Google]({search_url})")
 
-        pdf = generate_pdf(patient_name, pred_class, confidence)
-        st.download_button(
-            label="📄 Download PDF Report",
-            data=pdf,
-            file_name=f"{patient_name}_teeth_report.pdf",
-            mime="application/pdf"
-        )
+    # ---------- توليد PDF ----------
+    def create_report(name, pred, conf, desc):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        elements = []
 
-        st.markdown(f"[🌐 Learn more about {pred_class}]({disease_links[pred_class]})")
+        title_style = styles['Title']
+        title_style.textColor = colors.HexColor("#0066cc")
+        elements.append(Paragraph("🦷 Teeth Disease Classification Report", title_style))
+        elements.append(Spacer(1, 20))
 
-        st.markdown("### 🔎 Other possible conditions:")
-        for i, prob in enumerate(preds):
-            if i != pred_index:
-                percent = prob * 100
-                st.markdown(f"• {class_names[i]} — {percent:.2f}%")
+        patient_info = f"<b>👤 Patient Name:</b> {name}<br/><b>📅 Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        elements.append(Paragraph(patient_info, styles['Normal']))
+        elements.append(Spacer(1, 15))
 
-elif uploaded_file is not None and not patient_name:
-    st.warning("⚠️ Please enter your name before uploading an image.")
+        result = f"<b>🩺 Prediction:</b> <font color='red'>{pred}</font><br/><b>📊 Confidence:</b> {conf:.2f}%"
+        elements.append(Paragraph(result, styles['Normal']))
+        elements.append(Spacer(1, 15))
 
-# ===== Footer =====
-st.markdown('<div style="text-align:center; margin-top: 40px; color: #aaa;">© 2025 Dental AI Assistant | Made with ❤️ by Reem</div>', unsafe_allow_html=True)
+        if desc:
+            elements.append(Paragraph("<b>🧾 Disease Details:</b>", styles['Heading3']))
+            elements.append(Spacer(1, 5))
+            elements.append(Paragraph(desc, styles['BodyText']))
+            elements.append(Spacer(1, 10))
+
+        footer = "<font size=9 color=grey>This report was generated by an AI-powered diagnostic tool.</font>"
+        elements.append(Paragraph(footer, styles['Normal']))
+
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    report_buffer = create_report(patient_name, pred_class, confidence, disease_info.get(pred_class))
+
+    st.download_button(
+        label="⬇️ Download PDF Report",
+        data=report_buffer,
+        file_name=f"{patient_name}_teeth_report.pdf",
+        mime="application/pdf"
+    )
