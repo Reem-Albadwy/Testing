@@ -5,70 +5,69 @@ from tensorflow.keras.preprocessing import image
 from PIL import Image
 import base64
 import os
-from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from datetime import datetime
+from reportlab.pdfgen import canvas
+import io
 
-# ✅ إعدادات الصفحة (لازم تكون أول حاجة)
+# ========= إعداد صفحة Streamlit ========= #
 st.set_page_config(
     page_title="Teeth Classifier",
-    page_icon="🦷",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+    page_icon="🩇",
+    layout="centered"
 )
 
-# ✅ خلفية مخصصة
+# ========= تعيين خلفية مخصصة ========= #
 def set_background(image_path):
-    with open(image_path, "rb") as file:
-        encoded = base64.b64encode(file.read()).decode()
-    css = f"""
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+    css = f'''
     <style>
     .stApp {{
         background-image: url("data:image/png;base64,{encoded}");
         background-size: cover;
+        background-repeat: no-repeat;
         background-attachment: fixed;
-        background-position: center;
-        color: #ffffff;
     }}
     .report-container {{
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 2rem;
-        border-radius: 15px;
-        color: #000000;
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
     }}
     </style>
-    """
+    '''
     st.markdown(css, unsafe_allow_html=True)
 
 set_background("background.png")
 
-# ✅ تحميل الموديل
+# ========= تحميل الموديل ========= #
 @st.cache_resource
 def load_model():
     model_path = "SavedModel_format"
     return tf.saved_model.load(model_path)
 
 model = load_model()
+
 class_names = ['CaS', 'CoS', 'Gum', 'MC', 'OC', 'OLP', 'OT']
 
-# ✅ واجهة ترحيب
-st.markdown("<h2 style='text-align: center;'>🦷 Welcome to the Teeth Disease Classifier</h2>", unsafe_allow_html=True)
-patient_name = st.text_input("Enter Patient's Name:", "")
+# ========= إدخال اسم المستخدم ========= #
+st.markdown("""
+    <h2 style='text-align: center; color: #003366;'>🙌 Welcome to the Smart Teeth Classifier</h2>
+    <p style='text-align: center; color: #222;'>Please upload a teeth image below.</p>
+""", unsafe_allow_html=True)
 
-# ✅ رفع صورة
-uploaded_file = st.file_uploader("Upload a teeth image", type=["jpg", "jpeg", "png"])
+name = st.text_input("👤 Patient Name:")
+uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
-# ✅ لما تترفع صورة
-if uploaded_file is not None:
+# ========= التنبؤ وعرض النتائج ========= #
+if uploaded_file is not None and model is not None:
     img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    # تجهيز الصورة
     img = img.resize((224, 224))
     img_array = image.img_to_array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
 
-    # توقع
     infer = model.signatures["serving_default"]
     input_tensor = tf.convert_to_tensor(img_array)
     predictions = infer(input_tensor)
@@ -78,49 +77,50 @@ if uploaded_file is not None:
     pred_class = class_names[np.argmax(preds)]
     confidence = float(np.max(preds)) * 100
 
-    # ✅ تقرير التوقع
+    # ===== تقرير النتائج ===== #
     with st.container():
         st.markdown("<div class='report-container'>", unsafe_allow_html=True)
-        st.subheader(f"🩺 Predicted Disease: `{pred_class}`")
-        st.write(f"📊 Confidence: **{confidence:.2f}%**")
+        st.markdown(f"<h3 style='color:#0066cc;'>🚑 Prediction: {pred_class}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#333333; font-size:18px;'>📊 Confidence: <strong>{confidence:.2f}%</strong></p>", unsafe_allow_html=True)
 
-        # ✅ نسب باقي الأمراض
-        st.markdown("### Full Class Probabilities:")
-        for i, cls in enumerate(class_names):
-            st.write(f"{cls}: **{preds[i]*100:.2f}%**")
+        with st.expander("👉 Show probabilities for all classes"):
+            for i, cls in enumerate(class_names):
+                st.markdown(f"<span style='color:#444;'>{cls}: <strong>{preds[i]*100:.2f}%</strong></span>", unsafe_allow_html=True)
+
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ رابط خارجي للمعلومة
-    st.markdown(f"""
-        <a href="https://www.google.com/search?q={pred_class}+oral+disease" target="_blank">
-            🔎 Learn more about {pred_class}
-        </a>
-    """, unsafe_allow_html=True)
+    # ===== روابط إضافية حسب التشخيص ===== #
+    st.markdown("---")
+    st.markdown("### 🌐 Read more about the disease:")
+    disease_links = {
+        "CaS": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6422532/",
+        "CoS": "https://www.ncbi.nlm.nih.gov/books/NBK470190/",
+        "Gum": "https://www.webmd.com/oral-health/guide/gum-disease",
+        "MC": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3783794/",
+        "OC": "https://www.cdc.gov/cancer/oral/basic_info/index.htm",
+        "OLP": "https://www.mayoclinic.org/diseases-conditions/oral-lichen-planus/symptoms-causes/syc-20353232",
+        "OT": "https://en.wikipedia.org/wiki/Oral_thrush"
+    }
+    st.markdown(f"[Click here to read more about {pred_class}](" + disease_links[pred_class] + ")")
 
-    # ✅ زر تنزيل التقرير
-    def generate_pdf_report(name, prediction, confidence):
-        filename = "report.pdf"
-        c = canvas.Canvas(filename, pagesize=letter)
-        width, height = letter
-
-        c.setFont("Helvetica-Bold", 20)
-        c.drawCentredString(width / 2.0, height - 80, "🦷 Teeth Disease Diagnosis Report")
-
-        c.setFont("Helvetica", 14)
-        c.drawString(50, height - 130, f"👤 Patient Name: {name}")
-        c.drawString(50, height - 160, f"🩺 Predicted Disease: {prediction}")
-        c.drawString(50, height - 190, f"📊 Confidence: {confidence:.2f}%")
-
-        c.drawString(50, height - 230, "📅 Date: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    # ===== زر تحميل تقرير PDF ===== #
+    st.markdown("---")
+    if st.button("📄 Download Report as PDF"):
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=letter)
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(100, 750, "Teeth Classification Report")
+        c.setFont("Helvetica", 12)
+        c.drawString(100, 720, f"Patient Name: {name if name else 'N/A'}")
+        c.drawString(100, 700, f"Prediction: {pred_class}")
+        c.drawString(100, 680, f"Confidence: {confidence:.2f}%")
+        c.drawString(100, 650, "Probabilities:")
+        for i, cls in enumerate(class_names):
+            c.drawString(120, 630 - (i * 15), f"{cls}: {preds[i]*100:.2f}%")
         c.save()
-        return filename
-
-    if st.button("⬇️ Download PDF Report"):
-        report_file = generate_pdf_report(patient_name or "Unknown", pred_class, confidence)
-        with open(report_file, "rb") as f:
-            st.download_button(
-                label="📄 Click to Download",
-                data=f,
-                file_name="teeth_diagnosis_report.pdf",
-                mime="application/pdf"
-            )
+        st.download_button(
+            label="📄 Download PDF",
+            data=pdf_buffer.getvalue(),
+            file_name=f"{name}_teeth_report.pdf",
+            mime='application/pdf'
+        )
